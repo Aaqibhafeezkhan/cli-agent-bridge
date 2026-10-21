@@ -10,7 +10,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "exports": {
     ".": "./dist/index.js",
