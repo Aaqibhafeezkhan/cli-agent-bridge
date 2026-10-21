@@ -9,14 +9,19 @@ export interface StreamOptions {
 }
 
 /** Read complete protocol lines while preserving provider errors and cancellation. */
-export async function* readTextStream(options: StreamOptions): AsyncGenerator<string> {
+export async function* readTextStream(
+  options: StreamOptions,
+): AsyncGenerator<string> {
   const reader = options.response.body?.getReader();
   if (!reader) return;
   const decoder = new TextDecoder();
   let buffer = "";
   try {
     while (true) {
-      if (options.signal?.aborted) throw options.signal.reason ?? new DOMException("Aborted", "AbortError");
+      if (options.signal?.aborted)
+        throw (
+          options.signal.reason ?? new DOMException("Aborted", "AbortError")
+        );
       const chunk = await reader.read();
       buffer += decoder.decode(chunk.value, { stream: !chunk.done });
       const lines = buffer.split(/\r?\n/);
@@ -32,7 +37,10 @@ export async function* readTextStream(options: StreamOptions): AsyncGenerator<st
       if (text !== undefined && text !== "") yield text;
     }
   } catch (error) {
-    throw classifyProviderError(options.provider, error) satisfies ProviderError;
+    throw classifyProviderError(
+      options.provider,
+      error,
+    ) satisfies ProviderError;
   } finally {
     reader.releaseLock();
   }

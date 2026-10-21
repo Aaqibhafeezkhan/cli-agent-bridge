@@ -44,7 +44,12 @@ const ConfigSchema = z.object({
   maxLogBytes: z.number().int().positive().default(5_000_000),
 });
 
-type ConfigFile = Partial<Config>;
+type ConfigFile = { [Key in keyof Config]?: Config[Key] | undefined };
+const NumericConfigKeys = new Set([
+  "timeoutSeconds",
+  "rateLimitRetries",
+  "maxLogBytes",
+]);
 
 function parseBoolean(value: string | undefined): boolean | undefined {
   if (value === undefined) return undefined;
@@ -61,13 +66,17 @@ function environmentConfig(env: NodeJS.ProcessEnv): ConfigFile {
   };
 
   const primaryValue = env["AGENT_BRIDGE_PRIMARY"];
-  const primary = primaryValue === "openai" || primaryValue === "ollama" ? primaryValue : undefined;
+  const primary =
+    primaryValue === "openai" || primaryValue === "ollama"
+      ? primaryValue
+      : undefined;
   const fallback = parseBoolean(env["AGENT_BRIDGE_FALLBACK"]);
   const ollamaBaseUrl = env["AGENT_BRIDGE_OLLAMA_BASE_URL"];
   const ollamaModel = env["AGENT_BRIDGE_OLLAMA_MODEL"];
   const openaiBaseUrl = env["AGENT_BRIDGE_OPENAI_BASE_URL"];
   const openaiModel = env["AGENT_BRIDGE_OPENAI_MODEL"];
-  const openaiApiKey = env["OPENAI_API_KEY"] ?? env["AGENT_BRIDGE_OPENAI_API_KEY"];
+  const openaiApiKey =
+    env["OPENAI_API_KEY"] ?? env["AGENT_BRIDGE_OPENAI_API_KEY"];
   const timeoutSeconds = number(env["AGENT_BRIDGE_TIMEOUT"]);
   const rateLimitRetries = number(env["AGENT_BRIDGE_RATE_LIMIT_RETRIES"]);
   const logPath = env["AGENT_BRIDGE_LOG"];
@@ -92,8 +101,12 @@ async function readJsonConfig(filePath: string): Promise<ConfigFile> {
     const parsed: unknown = JSON.parse(await readFile(filePath, "utf8"));
     return z.record(z.unknown()).parse(parsed) as ConfigFile;
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return {};
-    throw new Error(`Could not read config at ${filePath}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    if (error instanceof Error && "code" in error && error.code === "ENOENT")
+      return {};
+    throw new Error(
+      `Could not read config at ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
   }
 }
 
@@ -103,7 +116,9 @@ export function getConfigPath(home = os.homedir()): string {
 }
 
 /** Load and validate settings using CLI, process environment, cwd .env, user config, then defaults. */
-export async function loadConfig(options: LoadConfigOptions = {}): Promise<Config> {
+export async function loadConfig(
+  options: LoadConfigOptions = {},
+): Promise<Config> {
   const cwd = options.cwd ?? process.cwd();
   const home = options.home ?? os.homedir();
   const processEnvironment = options.env ?? process.env;
@@ -112,7 +127,8 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Confi
   try {
     dotEnv = dotenv.parse(await readFile(dotEnvPath));
   } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
+      throw error;
   }
   const persistent = await readJsonConfig(getConfigPath(home));
   const mergedEnvironment = { ...dotEnv, ...processEnvironment };
@@ -124,14 +140,19 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Confi
 }
 
 /** Persist one validated setting while enforcing private file permissions. */
-export async function writeConfig(values: ConfigFile, home = os.homedir()): Promise<string> {
+export async function writeConfig(
+  values: ConfigFile,
+  home = os.homedir(),
+): Promise<string> {
   const filePath = getConfigPath(home);
   const directory = path.dirname(filePath);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const existing = await readJsonConfig(filePath);
   const validated = ConfigSchema.parse({ ...existing, ...values });
   const temporaryPath = `${filePath}.${process.pid}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify(validated, null, 2)}\n`, { mode: 0o600 });
+  await writeFile(temporaryPath, `${JSON.stringify(validated, null, 2)}\n`, {
+    mode: 0o600,
+  });
   await chmod(temporaryPath, 0o600);
   await rename(temporaryPath, filePath);
   await chmod(filePath, 0o600);
@@ -145,8 +166,31 @@ export async function resetConfig(home = os.homedir()): Promise<void> {
     const { unlink } = await import("node:fs/promises");
     await unlink(filePath);
   } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
+      throw error;
   }
+}
+
+/** Validate and persist one setting supplied as a command-line string. */
+export async function setConfigValue(
+  key: string,
+  rawValue: string,
+  home = os.homedir(),
+): Promise<void> {
+  if (!Object.prototype.hasOwnProperty.call(ConfigSchema.shape, key)) {
+    throw new Error(`Unknown setting: ${key}`);
+  }
+  let value: unknown = rawValue;
+  if (NumericConfigKeys.has(key)) {
+    value = Number(rawValue);
+    if (!Number.isFinite(value)) throw new Error(`${key} must be a number`);
+  } else if (key === "fallback") {
+    const parsed = parseBoolean(rawValue);
+    if (parsed === undefined) throw new Error("fallback must be true or false");
+    value = parsed;
+  }
+  const values = ConfigSchema.partial().parse({ [key]: value });
+  await writeConfig(values, home);
 }
 
 /** Mask a credential while retaining only its final four characters. */
@@ -154,9 +198,4 @@ export function maskSecret(secret: string | undefined): string | undefined {
   if (secret === undefined) return undefined;
   if (secret.length <= 4) return "*".repeat(secret.length);
   return `${"*".repeat(Math.max(4, secret.length - 4))}${secret.slice(-4)}`;
-}
-
-/** Convert a setting name to its stored configuration representation. */
-export function configSchema(): typeof ConfigSchema {
-  return ConfigSchema;
 }

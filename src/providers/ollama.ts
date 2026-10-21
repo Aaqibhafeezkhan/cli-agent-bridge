@@ -1,4 +1,9 @@
-import { classifyProviderError, type Provider, type ProviderRequest, type ProviderOptions } from "./types.js";
+import {
+  classifyProviderError,
+  type Provider,
+  type ProviderRequest,
+  type ProviderOptions,
+} from "./types.js";
 import { readTextStream } from "./stream.js";
 
 /** Options for connecting to a local Ollama server. */
@@ -17,13 +22,19 @@ export class OllamaProvider implements Provider {
 
   /** Create a provider for a local or remote Ollama-compatible server. */
   constructor(options: OllamaProviderOptions = {}) {
-    this.baseUrl = (options.baseUrl ?? "http://localhost:11434").replace(/\/+$/, "");
+    this.baseUrl = (options.baseUrl ?? "http://localhost:11434").replace(
+      /\/+$/,
+      "",
+    );
     this.model = options.model ?? "llama3.2";
     this.fetchImplementation = options.fetch ?? globalThis.fetch;
   }
 
   /** Stream generated text from `/api/chat`. */
-  async *complete(request: ProviderRequest, options: ProviderOptions = {}): AsyncGenerator<string> {
+  async *complete(
+    request: ProviderRequest,
+    options: ProviderOptions = {},
+  ): AsyncGenerator<string> {
     let response: Response;
     try {
       response = await this.fetchImplementation(`${this.baseUrl}/api/chat`, {
@@ -33,7 +44,9 @@ export class OllamaProvider implements Provider {
           model: request.model ?? this.model,
           messages: request.messages,
           stream: true,
-          ...(request.temperature !== undefined ? { options: { temperature: request.temperature } } : {}),
+          ...(request.temperature !== undefined
+            ? { options: { temperature: request.temperature } }
+            : {}),
         }),
         ...(options.signal ? { signal: options.signal } : {}),
       });
@@ -42,10 +55,14 @@ export class OllamaProvider implements Provider {
     }
     if (!response.ok) {
       const body = await response.text();
-      throw classifyProviderError(this.name, new Error(body || response.statusText), {
-        status: response.status,
-        body,
-      });
+      throw classifyProviderError(
+        this.name,
+        new Error(body || response.statusText),
+        {
+          status: response.status,
+          body,
+        },
+      );
     }
     yield* readTextStream({
       provider: this.name,
@@ -57,10 +74,20 @@ export class OllamaProvider implements Provider {
           const item: unknown = JSON.parse(line);
           if (typeof item !== "object" || item === null) return undefined;
           if ("error" in item && typeof item.error === "string") {
-            throw classifyProviderError(this.name, new Error(item.error), { body: item.error });
+            throw classifyProviderError(this.name, new Error(item.error), {
+              body: item.error,
+            });
           }
-          if (!("message" in item) || typeof item.message !== "object" || item.message === null) return undefined;
-          return "content" in item.message && typeof item.message.content === "string" ? item.message.content : undefined;
+          if (
+            !("message" in item) ||
+            typeof item.message !== "object" ||
+            item.message === null
+          )
+            return undefined;
+          return "content" in item.message &&
+            typeof item.message.content === "string"
+            ? item.message.content
+            : undefined;
         } catch (error) {
           if (error instanceof SyntaxError) return undefined;
           throw error;

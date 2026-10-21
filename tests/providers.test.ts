@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { OllamaProvider } from "../src/providers/ollama.js";
 import { OpenAIProvider } from "../src/providers/openai.js";
-import { classifyProviderError, ProviderError } from "../src/providers/types.js";
+import {
+  classifyProviderError,
+  ProviderError,
+} from "../src/providers/types.js";
 
 async function collect(chunks: AsyncIterable<string>): Promise<string[]> {
   const result: string[] = [];
@@ -22,23 +25,42 @@ describe("provider error classification", () => {
   });
 
   it("classifies HTTP status and retains retry delay", () => {
-    const error = classifyProviderError("openai", new Error("busy"), { status: 503, retryAfterMs: 1200 });
+    const error = classifyProviderError("openai", new Error("busy"), {
+      status: 503,
+      retryAfterMs: 1200,
+    });
     expect(error).toBeInstanceOf(ProviderError);
     expect(error.kind).toBe("server_error");
     expect(error.status).toBe(503);
     expect(error.retryAfterMs).toBe(1200);
+  });
+
+  it("recognizes timeout causes wrapped by fetch", () => {
+    const timeoutCause = Object.assign(new Error("operation timed out"), {
+      code: "ETIMEDOUT",
+    });
+    const error = classifyProviderError(
+      "ollama",
+      new TypeError("fetch failed", { cause: timeoutCause }),
+    );
+    expect(error.kind).toBe("timeout");
   });
 });
 
 describe("provider streaming clients", () => {
   it("sends Ollama chat requests and decodes NDJSON content", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response('{"message":{"content":"hello"},"done":false}\n{"message":{"content":" world"},"done":true}\n', {
-        headers: { "content-type": "application/x-ndjson" },
-      }),
+      new Response(
+        '{"message":{"content":"hello"},"done":false}\n{"message":{"content":" world"},"done":true}\n',
+        {
+          headers: { "content-type": "application/x-ndjson" },
+        },
+      ),
     );
     const provider = new OllamaProvider({ fetch: fetchMock, model: "qwen2.5" });
-    const output = await collect(provider.complete({ messages: [{ role: "user", content: "hi" }] }));
+    const output = await collect(
+      provider.complete({ messages: [{ role: "user", content: "hi" }] }),
+    );
     const request = fetchMock.mock.calls[0];
 
     expect(output).toEqual(["hello", " world"]);
@@ -48,26 +70,48 @@ describe("provider streaming clients", () => {
 
   it("sends OpenAI-compatible chat requests and decodes SSE content", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response('data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n', {
-        headers: { "content-type": "text/event-stream" },
-      }),
+      new Response(
+        'data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n',
+        {
+          headers: { "content-type": "text/event-stream" },
+        },
+      ),
     );
-    const provider = new OpenAIProvider({ fetch: fetchMock, apiKey: "secret-key", baseUrl: "https://example.test/v1/" });
-    const output = await collect(provider.complete({ messages: [{ role: "user", content: "hi" }] }));
+    const provider = new OpenAIProvider({
+      fetch: fetchMock,
+      apiKey: "secret-key",
+      baseUrl: "https://example.test/v1/",
+    });
+    const output = await collect(
+      provider.complete({ messages: [{ role: "user", content: "hi" }] }),
+    );
     const request = fetchMock.mock.calls[0];
 
     expect(output).toEqual(["hello"]);
     expect(request?.[0]).toBe("https://example.test/v1/chat/completions");
-    expect(new Headers(request?.[1]?.headers).get("authorization")).toBe("Bearer secret-key");
+    expect(new Headers(request?.[1]?.headers).get("authorization")).toBe(
+      "Bearer secret-key",
+    );
   });
 
   it("classifies provider error responses", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ error: { code: "context_length_exceeded", message: "too long" } }), { status: 400 }),
-    );
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { code: "context_length_exceeded", message: "too long" },
+          }),
+          { status: 400 },
+        ),
+      );
     const provider = new OpenAIProvider({ fetch: fetchMock });
 
-    await expect(collect(provider.complete({ messages: [{ role: "user", content: "x" }] }))).rejects.toMatchObject({
+    await expect(
+      collect(
+        provider.complete({ messages: [{ role: "user", content: "x" }] }),
+      ),
+    ).rejects.toMatchObject({
       kind: "context_overflow",
       provider: "openai",
     });
