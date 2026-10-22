@@ -1,5 +1,6 @@
 # cli-agent-bridge
 
+[![CI](https://github.com/alphasoprano2-eng/cli-agent-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/alphasoprano2-eng/cli-agent-bridge/actions/workflows/ci.yml)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A520-brightgreen)](#development)
 [![npm version](https://img.shields.io/npm/v/cli-agent-bridge.svg)](https://www.npmjs.com/package/cli-agent-bridge)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -11,6 +12,8 @@ A terminal-first LLM gateway for Node.js 20+. It sends prompts to local Ollama b
 ## Install
 
 ```sh
+git clone https://github.com/alphasoprano2-eng/cli-agent-bridge.git
+cd cli-agent-bridge
 npm ci
 npm run build
 npm link
